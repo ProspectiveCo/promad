@@ -13,7 +13,9 @@
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use repo::CachedNomadRepo;
-use std::{borrow::Cow, collections::HashSet, time::Duration};
+use std::{collections::HashSet, time::Duration};
+
+use once_cell::sync::Lazy;
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -32,7 +34,6 @@ pub mod error;
 pub mod repo;
 
 use crate::repo::{NomadRepo, NomadRow};
-use lazy_static::lazy_static;
 
 /// Good default for migration names.
 #[macro_export]
@@ -81,13 +82,13 @@ pub struct Migrator<DB: Database> {
     pub(crate) migrations: Vec<Box<dyn Migration<DB>>>,
     pub(crate) pool: Pool<DB>,
     pub(crate) repo: Box<dyn NomadRepo<DB>>,
-    pub(crate) ui_factory: Box<dyn MigrationUIFactory<DB>>,
+    pub(crate) ui_factory: Box<dyn Fn(&[(i64, &dyn Migration<DB>)]) -> Box<dyn MigrationUI>>,
 }
 
 /// Used for representing the status of a migration to the CLI frontend.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UiMigration {
-    name: Cow<'static, str>,
+    name: &'static str,
     run_at: Option<chrono::DateTime<Utc>>,
 }
 
@@ -98,7 +99,7 @@ impl Migrator<Postgres> {
     /// UI that's thread-safe.
     pub fn create_with_ui(
         pool: Pool<Postgres>,
-        ui_factory: Box<dyn MigrationUIFactory<Postgres>>,
+        ui_factory: Box<dyn Fn(&[(i64, &dyn Migration<Postgres>)]) -> Box<dyn MigrationUI>>,
     ) -> Self {
         let cached = CachedNomadRepo::<Postgres, PostgresNomadRepo>::new();
         Self {
@@ -117,27 +118,17 @@ impl Migrator<Postgres> {
             migrations: vec![],
             pool,
             repo: Box::new(cached),
-            ui_factory: Box::new(InteractiveMigrationUIFactory),
+            ui_factory: Box::new(InteractiveMigrationUI::new),
         }
     }
 }
 
-lazy_static! {
-    static ref DEFAULT_PROGRESS_STYLE: ProgressStyle = {
-        ProgressStyle::default_spinner()
-            .tick_chars("◐◓◑◒ ")
-            .template("{spinner:.dim.bold} {prefix:.bold.dim} {msg}")
-            .unwrap()
-    };
-}
-
-/// Used to dynamically spawn a UI for each run of the migrator.
-pub trait MigrationUIFactory<DB: Database> {
-    fn new() -> Self
-    where
-        Self: Sized;
-    fn create(&self, migrations: &Vec<(i64, &dyn Migration<DB>)>) -> Box<dyn MigrationUI>;
-}
+static DEFAULT_PROGRESS_STYLE: Lazy<ProgressStyle> = Lazy::new(|| {
+    ProgressStyle::default_spinner()
+        .tick_chars("◐◓◑◒ ")
+        .template("{spinner:.dim.bold} {prefix:.bold.dim} {msg}")
+        .unwrap()
+});
 
 /// Manage the UI for migrations. This is used to show progress bars
 /// and other information to the user.
@@ -165,14 +156,8 @@ pub struct InteractiveMigrationUI {
     progress_bars: Vec<ProgressBar>,
 }
 
-struct InteractiveMigrationUIFactory;
-
-impl<DB: Database> MigrationUIFactory<DB> for InteractiveMigrationUIFactory {
-    fn new() -> Self {
-        Self
-    }
-
-    fn create(&self, migrations: &Vec<(i64, &dyn Migration<DB>)>) -> Box<dyn MigrationUI> {
+impl InteractiveMigrationUI {
+    fn new<DB: Database>(migrations: &[(i64, &dyn Migration<DB>)]) -> Box<dyn MigrationUI> {
         let redirector = gag::Hold::stdout().unwrap();
         let multi_progress = MultiProgress::new();
         let migrations_len = migrations.len();
@@ -236,22 +221,27 @@ pub enum Direction {
 }
 
 impl<DB: Database> Migrator<DB> {
+    /// Add a single migration to the migrator.
     pub fn add_migration(&mut self, migration: Box<dyn Migration<DB>>) {
         self.migrations.push(migration);
     }
 
+    /// Add multiple migrations to the migrator.
     pub fn add_migrations(&mut self, migrations: Vec<Box<dyn Migration<DB>>>) {
         self.migrations.extend(migrations);
     }
 
+    /// Remove a migration from the migrator by name.
     pub fn remove_migration(&mut self, name: &str) {
         self.migrations.retain(|x| x.name() != name);
     }
 
+    /// Remove all migrations from the migrator.
     pub fn remove_all_migrations(&mut self) {
         self.migrations.clear();
     }
 
+    /// Applies migrations up to and including the migration with the given name.
     pub async fn apply_to_inclusive(&self, up_to_name: &str) -> crate::error::Result<()> {
         self.init_sql().await?;
         self.validate_all().await?;
@@ -281,6 +271,7 @@ impl<DB: Database> Migrator<DB> {
         Ok(())
     }
 
+    /// Find all unapplied migrations from the tracking table.
     async fn find_unapplied(&self) -> crate::error::Result<Vec<(i64, &dyn Migration<DB>)>> {
         let mut read = self.pool.acquire().await?;
         let applied_names = self
@@ -301,12 +292,14 @@ impl<DB: Database> Migrator<DB> {
             .collect())
     }
 
+    /// Apply all migrations passed using either up/down script while
+    /// keeping the UI up to date with the progress.
     async fn apply_migrations(
         &self,
         migrations: Vec<(i64, &dyn Migration<DB>)>,
         direction: Direction,
     ) -> crate::error::Result<()> {
-        let ui = self.ui_factory.create(&migrations);
+        let ui = (*self.ui_factory)(&migrations);
 
         for (idx, (ordering_key, migration)) in migrations.iter().enumerate() {
             ui.start(idx, &direction);
@@ -328,6 +321,7 @@ impl<DB: Database> Migrator<DB> {
         Ok(())
     }
 
+    /// Apply all migrations that haven't been applied yet.
     pub async fn apply_all(&self) -> crate::error::Result<()> {
         self.init_sql().await?;
         self.validate_all().await?;
@@ -338,6 +332,7 @@ impl<DB: Database> Migrator<DB> {
         Ok(())
     }
 
+    /// Revet all migrations that have been applied.
     pub async fn revert_all(&self) -> crate::error::Result<()> {
         self.init_sql().await?;
         self.validate_all().await?;
@@ -356,6 +351,7 @@ impl<DB: Database> Migrator<DB> {
         Ok(())
     }
 
+    /// List all migration with data about whether they've been applied or not and when.
     pub async fn list_migrations(&self) -> crate::error::Result<Vec<UiMigration>> {
         self.init_sql().await?;
         self.validate_all().await?;
@@ -387,6 +383,7 @@ impl<DB: Database> Migrator<DB> {
             .collect::<Vec<_>>())
     }
 
+    /// Reverts all migrations up to and including the one with the given name.
     pub async fn revert_to_inclusive(&self, name: &str) -> crate::error::Result<()> {
         self.init_sql().await?;
         self.validate_all().await?;
@@ -397,13 +394,6 @@ impl<DB: Database> Migrator<DB> {
         let mut conn = self.pool.acquire().await?;
         let mut txn = conn.begin().await?;
         let applied_migrations = self.repo.get_all(&mut txn).await?;
-
-        // let to_revert = applied_migrations
-        //     .iter()
-        //     .rev()
-        //     .take_while(|x| x.name != name)
-        //     .map(|x| (x.ordering_key, &*self.migrations[x.ordering_key as usize]))
-        //     .collect::<Vec<_>>();
 
         let mut to_revert = Vec::new();
 
@@ -421,6 +411,7 @@ impl<DB: Database> Migrator<DB> {
         Ok(())
     }
 
+    /// Runs the database specific SQL to initialize the tracking table.
     async fn init_sql(&self) -> crate::error::Result<()> {
         let mut write = self.pool.acquire().await?;
         let mut txn = write.begin().await?;
@@ -429,12 +420,14 @@ impl<DB: Database> Migrator<DB> {
         Ok(())
     }
 
+    /// Check that the migrations given pass all validation rule.
     async fn validate_all(&self) -> crate::error::Result<()> {
         self.validate_name_uniqueness()?;
         self.validate_db_against_local().await?;
         Ok(())
     }
 
+    /// Validate that migration names are unique.
     fn validate_name_uniqueness(&self) -> crate::error::Result<()> {
         let mut names = std::collections::HashSet::new();
         for migration in &self.migrations {
@@ -448,6 +441,7 @@ impl<DB: Database> Migrator<DB> {
         Ok(())
     }
 
+    /// Validate that the migrations in the database match the ones in the local directory.
     async fn validate_db_against_local<'a>(&self) -> crate::error::Result<()> {
         let mut read = self.pool.acquire().await?;
         let previously_applied = self
@@ -475,6 +469,7 @@ impl<DB: Database> Migrator<DB> {
         Ok(())
     }
 
+    /// Write to the tracking table that the migration has been applied.
     async fn record_completion(
         &self,
         write: &mut <DB as Database>::Connection,
@@ -494,6 +489,7 @@ impl<DB: Database> Migrator<DB> {
         Ok(())
     }
 
+    /// Helper for applying a single migration in a transaction.
     async fn apply_one_internal(
         &self,
         migration: &dyn Migration<DB>,
@@ -513,6 +509,7 @@ impl<DB: Database> Migrator<DB> {
         Ok(())
     }
 
+    // Helper for reverting a single migration in a transaction.
     async fn revert_one_internal(&self, migration: &dyn Migration<DB>) -> crate::error::Result<()> {
         let mut read = self.pool.acquire().await?;
         let mut write = self.pool.acquire().await?;

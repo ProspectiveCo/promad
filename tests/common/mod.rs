@@ -1,7 +1,8 @@
 use std::{cell::RefCell, error::Error, sync::Arc};
 
-use nomad::{repo::postgres::PostgresNomadRepo, MigrationUI, MigrationUIFactory, Migrator};
-use sqlx::{postgres::PgPoolOptions, Database, PgPool, Postgres};
+use nomad::{repo::postgres::PostgresNomadRepo, Migration, MigrationUI, Migrator};
+use once_cell::sync::Lazy;
+use sqlx::{postgres::PgPoolOptions, PgPool, Postgres};
 use testcontainers::{clients, Container};
 
 use self::postgres::PostgresImage;
@@ -24,8 +25,8 @@ macro_rules! create_migration {
                 _read: &mut <sqlx::Postgres as Database>::Connection,
                 write: &mut <sqlx::Postgres as Database>::Connection,
             ) -> crate::error::Result<()> {
-                println!("Running up migration {}", self.name());
-                println!("Running SQL: {}", $up_sql);
+                tracing::info!("Running up migration {}", self.name());
+                tracing::info!("Running SQL: {}", $up_sql);
                 sqlx::query($up_sql).execute(write).await?;
                 Ok(())
             }
@@ -35,8 +36,8 @@ macro_rules! create_migration {
                 _read: &mut <sqlx::Postgres as Database>::Connection,
                 write: &mut <sqlx::Postgres as Database>::Connection,
             ) -> crate::error::Result<()> {
-                println!("Running down migration {}", self.name());
-                println!("Running SQL: {}", $down_sql);
+                tracing::info!("Running down migration {}", self.name());
+                tracing::info!("Running SQL: {}", $down_sql);
                 sqlx::query($down_sql).execute(write).await?;
                 Ok(())
             }
@@ -46,21 +47,19 @@ macro_rules! create_migration {
     }};
 }
 
-lazy_static::lazy_static! {
-    static ref DOCKER: clients::Cli = clients::Cli::default();
-}
+static DOCKER: Lazy<clients::Cli> = Lazy::new(|| clients::Cli::default());
 
 pub struct TestHarness<'a> {
     pub pool: PgPool,
     pub pgsql: Container<'a, PostgresImage>,
-    pub factory: MockUIFactory,
+    pub uis: Arc<RefCell<Vec<MockUI>>>,
     pub migrator: Migrator<Postgres>,
     pub repo: PostgresNomadRepo,
 }
 
 impl TestHarness<'_> {
     pub fn get_mock_uis(&self) -> Vec<MockUI> {
-        self.factory.uis.borrow().clone()
+        self.uis.borrow().clone()
     }
 }
 
@@ -74,13 +73,22 @@ pub async fn make_test_harness() -> Result<TestHarness<'static>, Box<dyn Error>>
             port
         ))
         .await?;
-    let factory: MockUIFactory = MigrationUIFactory::<Postgres>::new();
-    let migrator = Migrator::create_with_ui(pool.clone(), Box::new(factory.clone()));
+    let uis = Arc::new(RefCell::new(Vec::new()));
+    let uis_clone = uis.clone();
+    let factory: Box<dyn Fn(&[(i64, &dyn Migration<Postgres>)]) -> Box<dyn MigrationUI>> =
+        Box::new(move |_migrations| {
+            let ui = MockUI {
+                messages: Arc::new(RefCell::new(Vec::new())),
+            };
+            uis_clone.clone().borrow_mut().push(ui.clone());
+            Box::new(ui)
+        });
+    let migrator = Migrator::create_with_ui(pool.clone(), factory);
     Ok(TestHarness {
         pool,
         pgsql,
         migrator,
-        factory,
+        uis,
         repo: PostgresNomadRepo,
     })
 }
@@ -100,30 +108,6 @@ pub struct MockUI {
 impl MockUI {
     pub fn messages(&self) -> Vec<MockUICommands> {
         self.messages.borrow().clone()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct MockUIFactory {
-    uis: Arc<RefCell<Vec<MockUI>>>,
-}
-
-impl<DB: Database> MigrationUIFactory<DB> for MockUIFactory {
-    fn new() -> Self
-    where
-        Self: Sized,
-    {
-        Self {
-            uis: Arc::new(RefCell::new(Vec::new())),
-        }
-    }
-
-    fn create(&self, _migrations: &Vec<(i64, &dyn nomad::Migration<DB>)>) -> Box<dyn MigrationUI> {
-        let mock_ui = MockUI {
-            messages: Arc::new(RefCell::new(Vec::new())),
-        };
-        self.uis.borrow_mut().push(mock_ui.clone());
-        Box::new(mock_ui)
     }
 }
 

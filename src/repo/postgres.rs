@@ -9,15 +9,12 @@
 // │                                                                           │
 // └───────────────────────────────────────────────────────────────────────────┘
 
-use std::borrow::Cow;
-
 use async_trait::async_trait;
 use sqlx::Database;
 use sqlx::Postgres;
 
 use super::NomadRepo;
 use super::NomadRow;
-use crate::error::Result;
 
 const INIT_SQL: &[&str] = &[
     r#"CREATE TABLE IF NOT EXISTS _nomad (
@@ -36,7 +33,10 @@ impl NomadRepo<Postgres> for PostgresNomadRepo {
         Self
     }
 
-    async fn init<'a>(&self, conn: &'a mut <Postgres as Database>::Connection) -> Result<()> {
+    async fn init<'a>(
+        &self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> crate::error::Result<()> {
         for sql in INIT_SQL {
             sqlx::query(sql).execute(&mut *conn).await?;
         }
@@ -46,7 +46,7 @@ impl NomadRepo<Postgres> for PostgresNomadRepo {
     async fn set_read_only<'a>(
         &self,
         conn: &'a mut <Postgres as Database>::Connection,
-    ) -> Result<()> {
+    ) -> crate::error::Result<()> {
         sqlx::query("SET TRANSACTION READ ONLY")
             .execute(conn)
             .await?;
@@ -56,7 +56,7 @@ impl NomadRepo<Postgres> for PostgresNomadRepo {
     async fn get_all<'a>(
         &self,
         conn: &'a mut <Postgres as Database>::Connection,
-    ) -> Result<Vec<NomadRow>> {
+    ) -> crate::error::Result<Vec<NomadRow>> {
         let rows = sqlx::query_as::<_, NomadRow>("SELECT * FROM _nomad ORDER BY ordering_key")
             .fetch_all(conn)
             .await?;
@@ -67,7 +67,7 @@ impl NomadRepo<Postgres> for PostgresNomadRepo {
         &self,
         name: &str,
         conn: &'a mut <Postgres as Database>::Connection,
-    ) -> Result<Option<NomadRow>> {
+    ) -> crate::error::Result<Option<NomadRow>> {
         let row = sqlx::query_as::<_, NomadRow>("SELECT * FROM _nomad WHERE name = $1")
             .bind(name)
             .fetch_optional(conn)
@@ -79,7 +79,7 @@ impl NomadRepo<Postgres> for PostgresNomadRepo {
         &self,
         row: &NomadRow,
         conn: &'a mut <Postgres as Database>::Connection,
-    ) -> Result<()> {
+    ) -> crate::error::Result<()> {
         sqlx::query("INSERT INTO _nomad (name, ordering_key, created_at) VALUES ($1, $2, $3)")
             .bind(row.name.clone())
             .bind(row.ordering_key)
@@ -91,9 +91,9 @@ impl NomadRepo<Postgres> for PostgresNomadRepo {
 
     async fn delete<'a>(
         &self,
-        name: Cow<'static, str>,
+        name: &'static str,
         conn: &'a mut <Postgres as Database>::Connection,
-    ) -> Result<()> {
+    ) -> crate::error::Result<()> {
         sqlx::query("DELETE FROM _nomad WHERE name = $1")
             .bind(name)
             .execute(conn)

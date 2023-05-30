@@ -10,7 +10,6 @@
 // └───────────────────────────────────────────────────────────────────────────┘
 
 use std::{
-    borrow::Cow,
     collections::BTreeMap,
     sync::{Arc, RwLock},
 };
@@ -65,7 +64,7 @@ pub trait NomadRepo<DB: Database>: Send + Sync {
     /// Remove a migration.
     async fn delete<'a>(
         &self,
-        row: Cow<'static, str>,
+        row: &'static str,
         conn: &'a mut <DB as Database>::Connection,
     ) -> crate::error::Result<()>;
 }
@@ -107,16 +106,16 @@ impl<DB: Database, N: NomadRepo<DB> + 'static> NomadRepo<DB> for CachedNomadRepo
         conn: &'a mut <DB as Database>::Connection,
     ) -> crate::error::Result<Vec<NomadRow>> {
         {
-            let is_db_loaded = self.is_db_loaded.read().expect("poisoned lock");
+            let is_db_loaded = self.is_db_loaded.read()?;
             if *is_db_loaded {
-                let cache = self.cache.read().expect("poisoned lock");
+                let cache = self.cache.read()?;
                 return Ok(cache.values().cloned().collect());
             }
         }
 
         let rows = {
             let rows = self.inner.get_all(conn).await?;
-            let mut cache = self.cache.write().expect("poisoned lock");
+            let mut cache = self.cache.write()?;
             for row in &rows {
                 cache.insert(row.ordering_key, row.clone());
             }
@@ -124,7 +123,7 @@ impl<DB: Database, N: NomadRepo<DB> + 'static> NomadRepo<DB> for CachedNomadRepo
         };
 
         // Update the state to true indicating the database has been loaded into cache.
-        let mut is_db_loaded = self.is_db_loaded.write().expect("poisoned lock");
+        let mut is_db_loaded = self.is_db_loaded.write()?;
         *is_db_loaded = true;
 
         Ok(rows)
@@ -136,16 +135,16 @@ impl<DB: Database, N: NomadRepo<DB> + 'static> NomadRepo<DB> for CachedNomadRepo
         conn: &'a mut <DB as Database>::Connection,
     ) -> crate::error::Result<Option<NomadRow>> {
         {
-            let is_db_loaded = self.is_db_loaded.read().expect("poisoned lock");
+            let is_db_loaded = self.is_db_loaded.read()?;
             if *is_db_loaded {
-                let cache = self.cache.read().expect("poisoned lock");
+                let cache = self.cache.read()?;
                 return Ok(cache.values().find(|&row| row.name == name).cloned());
             }
         }
 
         let row = self.inner.get(name, conn).await?;
         if let Some(ref r) = row {
-            let mut cache = self.cache.write().expect("poisoned lock");
+            let mut cache = self.cache.write()?;
             cache.insert(r.ordering_key, r.clone());
         }
 
@@ -158,18 +157,18 @@ impl<DB: Database, N: NomadRepo<DB> + 'static> NomadRepo<DB> for CachedNomadRepo
         conn: &'a mut <DB as Database>::Connection,
     ) -> crate::error::Result<()> {
         self.inner.insert(row, conn).await?;
-        let mut cache = self.cache.write().expect("poisoned lock");
+        let mut cache = self.cache.write()?;
         cache.insert(row.ordering_key, row.clone());
         Ok(())
     }
 
     async fn delete<'a>(
         &self,
-        name: Cow<'static, str>,
+        name: &'static str,
         conn: &'a mut <DB as Database>::Connection,
     ) -> crate::error::Result<()> {
-        self.inner.delete(name.clone(), conn).await?;
-        let mut cache = self.cache.write().expect("poisoned lock");
+        self.inner.delete(name, conn).await?;
+        let mut cache = self.cache.write()?;
         cache.retain(|_, row| row.name != name);
         Ok(())
     }

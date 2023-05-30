@@ -9,6 +9,8 @@
 // │                                                                           │
 // └───────────────────────────────────────────────────────────────────────────┘
 
+use std::sync::{PoisonError, RwLockReadGuard, RwLockWriteGuard};
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Sqlx error: {0}")]
@@ -29,6 +31,20 @@ pub enum Error {
         remote_name: String,
         local_name: String,
     },
+    #[error("Failed to acquire cache log")]
+    LockError(String),
+}
+
+impl<'a, T> From<PoisonError<RwLockReadGuard<'a, T>>> for Error {
+    fn from(e: PoisonError<RwLockReadGuard<'a, T>>) -> Self {
+        Error::LockError(e.to_string())
+    }
+}
+
+impl<'a, T> From<PoisonError<RwLockWriteGuard<'a, T>>> for Error {
+    fn from(e: PoisonError<RwLockWriteGuard<'a, T>>) -> Self {
+        Error::LockError(e.to_string())
+    }
 }
 
 pub type Result<A> = std::result::Result<A, Error>;

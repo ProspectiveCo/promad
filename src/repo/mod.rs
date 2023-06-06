@@ -21,7 +21,7 @@ use sqlx::Database;
 pub mod postgres;
 
 #[derive(sqlx::FromRow, Debug, Clone)]
-pub struct NomadRow {
+pub struct PromadRow {
     pub(crate) name: String,
     pub(crate) ordering_key: i64,
     pub(crate) created_at: chrono::DateTime<chrono::Utc>,
@@ -30,7 +30,7 @@ pub struct NomadRow {
 /// A trait for interacting with the migrations table
 /// on any supported underlying database.
 #[async_trait]
-pub trait NomadRepo<DB: Database>: Send + Sync {
+pub trait PromadRepo<DB: Database>: Send + Sync {
     fn new() -> Self
     where
         Self: Sized;
@@ -48,17 +48,17 @@ pub trait NomadRepo<DB: Database>: Send + Sync {
     async fn get_all<'a>(
         &self,
         conn: &'a mut <DB as Database>::Connection,
-    ) -> crate::error::Result<Vec<NomadRow>>;
+    ) -> crate::error::Result<Vec<PromadRow>>;
     /// Get specific migration by name.
     async fn get<'a>(
         &self,
         name: &str,
         conn: &'a mut <DB as Database>::Connection,
-    ) -> crate::error::Result<Option<NomadRow>>;
+    ) -> crate::error::Result<Option<PromadRow>>;
     /// Insert a new migration.
     async fn insert<'a>(
         &self,
-        row: &NomadRow,
+        row: &PromadRow,
         conn: &'a mut <DB as Database>::Connection,
     ) -> crate::error::Result<()>;
     /// Remove a migration.
@@ -69,15 +69,15 @@ pub trait NomadRepo<DB: Database>: Send + Sync {
     ) -> crate::error::Result<()>;
 }
 
-pub struct CachedNomadRepo<DB: Database, N: NomadRepo<DB>> {
-    inner: Box<dyn NomadRepo<DB>>,
-    cache: Arc<RwLock<BTreeMap<i64, NomadRow>>>,
+pub struct CachedPromadRepo<DB: Database, N: PromadRepo<DB>> {
+    inner: Box<dyn PromadRepo<DB>>,
+    cache: Arc<RwLock<BTreeMap<i64, PromadRow>>>,
     is_db_loaded: Arc<RwLock<bool>>,
     _marker: std::marker::PhantomData<N>,
 }
 
 #[async_trait]
-impl<DB: Database, N: NomadRepo<DB> + 'static> NomadRepo<DB> for CachedNomadRepo<DB, N> {
+impl<DB: Database, N: PromadRepo<DB> + 'static> PromadRepo<DB> for CachedPromadRepo<DB, N> {
     fn new() -> Self {
         Self {
             inner: Box::new(N::new()),
@@ -104,7 +104,7 @@ impl<DB: Database, N: NomadRepo<DB> + 'static> NomadRepo<DB> for CachedNomadRepo
     async fn get_all<'a>(
         &self,
         conn: &'a mut <DB as Database>::Connection,
-    ) -> crate::error::Result<Vec<NomadRow>> {
+    ) -> crate::error::Result<Vec<PromadRow>> {
         {
             let is_db_loaded = self.is_db_loaded.read()?;
             if *is_db_loaded {
@@ -133,7 +133,7 @@ impl<DB: Database, N: NomadRepo<DB> + 'static> NomadRepo<DB> for CachedNomadRepo
         &self,
         name: &str,
         conn: &'a mut <DB as Database>::Connection,
-    ) -> crate::error::Result<Option<NomadRow>> {
+    ) -> crate::error::Result<Option<PromadRow>> {
         {
             let is_db_loaded = self.is_db_loaded.read()?;
             if *is_db_loaded {
@@ -153,7 +153,7 @@ impl<DB: Database, N: NomadRepo<DB> + 'static> NomadRepo<DB> for CachedNomadRepo
 
     async fn insert<'a>(
         &self,
-        row: &NomadRow,
+        row: &PromadRow,
         conn: &'a mut <DB as Database>::Connection,
     ) -> crate::error::Result<()> {
         self.inner.insert(row, conn).await?;

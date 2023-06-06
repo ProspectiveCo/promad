@@ -1,6 +1,6 @@
-# Nomad
+# <i>Pro</i>mad
 
-<p align="center"><img src="nomad.png" width="25%" alt="Nomad logo"></p>
+<p align="center"><img src="promad.png" width="25%" alt="Promad logo"></p>
 
 Migration tool for SQLx that allows for arbitrary SQL/Rust execution within a transaction on the write connection.
 
@@ -16,7 +16,7 @@ Migration tool for SQLx that allows for arbitrary SQL/Rust execution within a tr
 # async fn main() {
 use std::borrow::Cow;
 use async_trait::async_trait;
-use nomad::{file_basename, Migration, Migrator, error::{Error, Result}};
+use promad::{file_basename, Migration, Migrator, error::{Error, Result}};
 use sqlx::{postgres::PgPoolOptions, PgPool, Postgres, Executor, Row};
 use testcontainers::{clients, Container};
 

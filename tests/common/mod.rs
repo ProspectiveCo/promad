@@ -1,7 +1,7 @@
 use std::{cell::RefCell, error::Error, sync::Arc};
 
-use nomad::{repo::postgres::PostgresNomadRepo, Migration, MigrationUI, Migrator};
 use once_cell::sync::Lazy;
+use promad::{repo::postgres::PostgresPromadRepo, Migration, MigrationUI, Migrator};
 use sqlx::{postgres::PgPoolOptions, PgPool, Postgres};
 use testcontainers::{clients, Container};
 
@@ -54,7 +54,7 @@ pub struct TestHarness<'a> {
     pub pgsql: Container<'a, PostgresImage>,
     pub uis: Arc<RefCell<Vec<MockUI>>>,
     pub migrator: Migrator<Postgres>,
-    pub repo: PostgresNomadRepo,
+    pub repo: PostgresPromadRepo,
 }
 
 impl TestHarness<'_> {
@@ -89,13 +89,13 @@ pub async fn make_test_harness() -> Result<TestHarness<'static>, Box<dyn Error>>
         pgsql,
         migrator,
         uis,
-        repo: PostgresNomadRepo,
+        repo: PostgresPromadRepo,
     })
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum MockUICommands {
-    Start(usize, nomad::Direction),
+    Start(usize, promad::Direction),
     Finish(usize),
     Complete,
 }
@@ -112,7 +112,7 @@ impl MockUI {
 }
 
 impl MigrationUI for MockUI {
-    fn start(&self, idx: usize, direction: &nomad::Direction) {
+    fn start(&self, idx: usize, direction: &promad::Direction) {
         self.messages
             .borrow_mut()
             .push(MockUICommands::Start(idx, direction.clone()));

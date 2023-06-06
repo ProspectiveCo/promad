@@ -1,4 +1,4 @@
-use nomad::*;
+use promad::*;
 
 use sqlx::Database;
 
@@ -79,7 +79,7 @@ async fn test_rename_migration_on_disk() -> Result<(), Box<dyn Error>> {
 
     assert!(matches!(
         res,
-        Err(nomad::error::Error::HistoryMigrationMismatch { .. })
+        Err(promad::error::Error::HistoryMigrationMismatch { .. })
     ));
     Ok(())
 }
@@ -120,7 +120,7 @@ async fn test_invalid_sql_command() -> Result<(), Box<dyn Error>> {
     let mut env = make_test_harness().await?;
     env.migrator.add_migration(migration());
     let res = env.migrator.apply_all().await;
-    assert!(matches!(res, Err(nomad::error::Error::DatabaseError(_))));
+    assert!(matches!(res, Err(promad::error::Error::DatabaseError(_))));
     Ok(())
 }
 

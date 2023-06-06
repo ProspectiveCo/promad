@@ -13,22 +13,22 @@ use async_trait::async_trait;
 use sqlx::Database;
 use sqlx::Postgres;
 
-use super::NomadRepo;
-use super::NomadRow;
+use super::PromadRepo;
+use super::PromadRow;
 
 const INIT_SQL: &[&str] = &[
-    r#"CREATE TABLE IF NOT EXISTS _nomad (
+    r#"CREATE TABLE IF NOT EXISTS _promad (
         name TEXT NOT NULL PRIMARY KEY,
         ordering_key BIGINT NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE NOT NULL
     );"#,
-    "CREATE INDEX IF NOT EXISTS idx_nomad_ordering_key ON _nomad (ordering_key);",
+    "CREATE INDEX IF NOT EXISTS idx_promad_ordering_key ON _promad (ordering_key);",
 ];
 
-pub struct PostgresNomadRepo;
+pub struct PostgresPromadRepo;
 
 #[async_trait]
-impl NomadRepo<Postgres> for PostgresNomadRepo {
+impl PromadRepo<Postgres> for PostgresPromadRepo {
     fn new() -> Self {
         Self
     }
@@ -56,8 +56,8 @@ impl NomadRepo<Postgres> for PostgresNomadRepo {
     async fn get_all<'a>(
         &self,
         conn: &'a mut <Postgres as Database>::Connection,
-    ) -> crate::error::Result<Vec<NomadRow>> {
-        let rows = sqlx::query_as::<_, NomadRow>("SELECT * FROM _nomad ORDER BY ordering_key")
+    ) -> crate::error::Result<Vec<PromadRow>> {
+        let rows = sqlx::query_as::<_, PromadRow>("SELECT * FROM _promad ORDER BY ordering_key")
             .fetch_all(conn)
             .await?;
         Ok(rows)
@@ -67,8 +67,8 @@ impl NomadRepo<Postgres> for PostgresNomadRepo {
         &self,
         name: &str,
         conn: &'a mut <Postgres as Database>::Connection,
-    ) -> crate::error::Result<Option<NomadRow>> {
-        let row = sqlx::query_as::<_, NomadRow>("SELECT * FROM _nomad WHERE name = $1")
+    ) -> crate::error::Result<Option<PromadRow>> {
+        let row = sqlx::query_as::<_, PromadRow>("SELECT * FROM _promad WHERE name = $1")
             .bind(name)
             .fetch_optional(conn)
             .await?;
@@ -77,10 +77,10 @@ impl NomadRepo<Postgres> for PostgresNomadRepo {
 
     async fn insert<'a>(
         &self,
-        row: &NomadRow,
+        row: &PromadRow,
         conn: &'a mut <Postgres as Database>::Connection,
     ) -> crate::error::Result<()> {
-        sqlx::query("INSERT INTO _nomad (name, ordering_key, created_at) VALUES ($1, $2, $3)")
+        sqlx::query("INSERT INTO _promad (name, ordering_key, created_at) VALUES ($1, $2, $3)")
             .bind(row.name.clone())
             .bind(row.ordering_key)
             .bind(row.created_at)
@@ -94,7 +94,7 @@ impl NomadRepo<Postgres> for PostgresNomadRepo {
         name: &'static str,
         conn: &'a mut <Postgres as Database>::Connection,
     ) -> crate::error::Result<()> {
-        sqlx::query("DELETE FROM _nomad WHERE name = $1")
+        sqlx::query("DELETE FROM _promad WHERE name = $1")
             .bind(name)
             .execute(conn)
             .await?;

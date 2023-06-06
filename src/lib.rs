@@ -12,7 +12,7 @@
 #![doc = include_str!("../README.md")]
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use repo::CachedNomadRepo;
+use repo::CachedPromadRepo;
 use std::{collections::HashSet, time::Duration};
 
 use once_cell::sync::Lazy;
@@ -21,7 +21,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 
 #[cfg(feature = "postgres")]
-use repo::postgres::PostgresNomadRepo;
+use repo::postgres::PostgresPromadRepo;
 #[cfg(feature = "postgres")]
 use sqlx::Postgres;
 
@@ -33,7 +33,7 @@ pub mod cli;
 pub mod error;
 pub mod repo;
 
-use crate::repo::{NomadRepo, NomadRow};
+use crate::repo::{PromadRepo, PromadRow};
 
 /// Good default for migration names.
 #[macro_export]
@@ -81,7 +81,7 @@ pub trait Migration<DB: Database>: Send + Sync {
 pub struct Migrator<DB: Database> {
     pub(crate) migrations: Vec<Box<dyn Migration<DB>>>,
     pub(crate) pool: Pool<DB>,
-    pub(crate) repo: Box<dyn NomadRepo<DB>>,
+    pub(crate) repo: Box<dyn PromadRepo<DB>>,
     pub(crate) ui_factory: Box<dyn Fn(&[(i64, &dyn Migration<DB>)]) -> Box<dyn MigrationUI>>,
 }
 
@@ -101,7 +101,7 @@ impl Migrator<Postgres> {
         pool: Pool<Postgres>,
         ui_factory: Box<dyn Fn(&[(i64, &dyn Migration<Postgres>)]) -> Box<dyn MigrationUI>>,
     ) -> Self {
-        let cached = CachedNomadRepo::<Postgres, PostgresNomadRepo>::new();
+        let cached = CachedPromadRepo::<Postgres, PostgresPromadRepo>::new();
         Self {
             migrations: vec![],
             pool,
@@ -113,7 +113,7 @@ impl Migrator<Postgres> {
     /// Create a Migrator with an interacte UI that isn't thread safe
     /// due to stdout being redirected while executing migrations.
     pub fn create(pool: Pool<Postgres>) -> Self {
-        let cached = CachedNomadRepo::<Postgres, PostgresNomadRepo>::new();
+        let cached = CachedPromadRepo::<Postgres, PostgresPromadRepo>::new();
         Self {
             migrations: vec![],
             pool,
@@ -478,7 +478,7 @@ impl<DB: Database> Migrator<DB> {
     ) -> crate::error::Result<()> {
         self.repo
             .insert(
-                &NomadRow {
+                &PromadRow {
                     name: migration.name().to_string(),
                     ordering_key,
                     created_at: Utc::now(),

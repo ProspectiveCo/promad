@@ -17,10 +17,10 @@ use colored::Colorize;
 use prettytable::{format, row, Table};
 
 #[derive(Debug, Parser)]
-#[clap(about = "Nomad migration tool")]
-pub struct NomadCli {
+#[clap(about = "Promad migration tool")]
+pub struct PromadCli {
     #[clap(subcommand)]
-    pub subcmd: NomadSubcommand,
+    pub subcmd: PromadSubcommand,
 }
 
 /// The subcommands of the migration CLI.
@@ -28,7 +28,7 @@ pub struct NomadCli {
 /// users can include migration commands in their server
 /// binary, etc.
 #[derive(Debug, Subcommand)]
-pub enum NomadSubcommand {
+pub enum PromadSubcommand {
     #[clap(about = "Apply migrations up to a specific migrations")]
     Apply {
         #[clap(help = "The name of the migrations to apply to (inclusive)")]
@@ -47,11 +47,11 @@ pub enum NomadSubcommand {
 
 /// Execute the subcommand given a migrator.
 pub async fn interpreter<DB: sqlx::Database>(
-    subcmd: NomadSubcommand,
+    subcmd: PromadSubcommand,
     migrator: Migrator<DB>,
 ) -> Result<()> {
     match subcmd {
-        NomadSubcommand::Apply { name } => match name {
+        PromadSubcommand::Apply { name } => match name {
             Some(name) => {
                 migrator.apply_to_inclusive(&name).await?;
             }
@@ -59,10 +59,10 @@ pub async fn interpreter<DB: sqlx::Database>(
                 migrator.apply_all().await?;
             }
         },
-        NomadSubcommand::Revert { name } => {
+        PromadSubcommand::Revert { name } => {
             migrator.revert_to_inclusive(&name).await?;
         }
-        NomadSubcommand::List => {
+        PromadSubcommand::List => {
             let mut table = Table::new();
             let format = format::FormatBuilder::new()
                 .column_separator('|')
@@ -90,7 +90,7 @@ pub async fn interpreter<DB: sqlx::Database>(
             // Print the table to stdout
             table.printstd();
         }
-        NomadSubcommand::RevertAll => {
+        PromadSubcommand::RevertAll => {
             migrator.revert_all().await?;
         }
     }

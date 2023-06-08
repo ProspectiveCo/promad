@@ -92,37 +92,6 @@ pub struct UiMigration {
     run_at: Option<chrono::DateTime<Utc>>,
 }
 
-#[cfg(feature = "postgres")]
-impl Migrator<Postgres> {
-    /// Create a UI with a custom UI factory.
-    /// This is useful for testing or using a non-interactive
-    /// UI that's thread-safe.
-    pub fn create_with_ui(
-        pool: Pool<Postgres>,
-        ui_factory: Box<dyn Fn(&[(i64, &dyn Migration<Postgres>)]) -> Box<dyn MigrationUI>>,
-    ) -> Self {
-        let cached = CachedPromadRepo::<Postgres, PostgresPromadRepo>::new();
-        Self {
-            migrations: vec![],
-            pool,
-            repo: Box::new(cached),
-            ui_factory,
-        }
-    }
-
-    /// Create a Migrator with an interacte UI that isn't thread safe
-    /// due to stdout being redirected while executing migrations.
-    pub fn create(pool: Pool<Postgres>) -> Self {
-        let cached = CachedPromadRepo::<Postgres, PostgresPromadRepo>::new();
-        Self {
-            migrations: vec![],
-            pool,
-            repo: Box::new(cached),
-            ui_factory: Box::new(InteractiveMigrationUI::new),
-        }
-    }
-}
-
 static DEFAULT_PROGRESS_STYLE: Lazy<ProgressStyle> = Lazy::new(|| {
     ProgressStyle::default_spinner()
         .tick_chars("◐◓◑◒ ")
@@ -218,6 +187,44 @@ impl MigrationUI for InteractiveMigrationUI {
 pub enum Direction {
     Up,
     Down,
+}
+
+pub trait HasPromadRepo: Database {
+    type Repo: PromadRepo<Self>;
+}
+
+impl HasPromadRepo for Postgres {
+    type Repo = PostgresPromadRepo;
+}
+
+impl<DB: Database + HasPromadRepo> Migrator<DB> {
+    /// Create a Migrator with an interactive UI that isn't thread safe
+    /// due to stdout being redirected while executing migrations.
+    pub fn create(pool: Pool<DB>) -> Self {
+        let cached = CachedPromadRepo::<DB, <DB as HasPromadRepo>::Repo>::new();
+        Self {
+            migrations: vec![],
+            pool,
+            repo: Box::new(cached),
+            ui_factory: Box::new(InteractiveMigrationUI::new),
+        }
+    }
+
+    /// Create a UI with a custom UI factory.
+    /// This is useful for testing or using a non-interactive
+    /// UI that's thread-safe.
+    pub fn create_with_ui(
+        pool: Pool<DB>,
+        ui_factory: Box<dyn Fn(&[(i64, &dyn Migration<DB>)]) -> Box<dyn MigrationUI>>,
+    ) -> Self {
+        let cached = CachedPromadRepo::<DB, <DB as HasPromadRepo>::Repo>::new();
+        Self {
+            migrations: vec![],
+            pool,
+            repo: Box::new(cached),
+            ui_factory,
+        }
+    }
 }
 
 impl<DB: Database> Migrator<DB> {

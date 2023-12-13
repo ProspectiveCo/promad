@@ -69,7 +69,7 @@ migrator.apply_all().await.unwrap();
 let mut conn = pool.acquire().await.unwrap();
 
 let row = sqlx::query("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'test')")
-    .fetch_one(&mut conn)
+    .fetch_one(conn.as_mut())
     .await.unwrap();
 
 assert!(row.get::<bool, _>(0));
@@ -77,7 +77,7 @@ assert!(row.get::<bool, _>(0));
 migrator.revert_all().await.unwrap();
 
 let row = sqlx::query("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'test')")
-    .fetch_one(&mut conn)
+    .fetch_one(conn.as_mut())
     .await.unwrap();
 
 assert!(!row.get::<bool, _>(0));

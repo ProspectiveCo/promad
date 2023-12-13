@@ -33,18 +33,18 @@ async fn test_good_migration() -> Result<(), Box<dyn Error>> {
     let mut conn = env.pool.acquire().await?;
 
     sqlx::query("INSERT INTO test VALUES (1)")
-        .execute(&mut conn)
+        .execute(conn.as_mut())
         .await?;
 
     let row: (i32,) = sqlx::query_as("SELECT 1 FROM test")
-        .fetch_one(&mut conn)
+        .fetch_one(conn.as_mut())
         .await?;
     assert_eq!(row.0, 1);
 
     env.migrator.revert_all().await?;
 
     let row: Result<(i32,), sqlx::Error> = sqlx::query_as("SELECT 1 FROM test")
-        .fetch_one(&mut conn)
+        .fetch_one(conn.as_mut())
         .await;
 
     assert!(row.is_err());
@@ -145,7 +145,7 @@ async fn test_rename_table_migration() -> Result<(), Box<dyn Error>> {
 
     let mut conn = env.pool.acquire().await?;
     let row: Result<Option<(i32,)>, sqlx::Error> = sqlx::query_as("SELECT 1 FROM test2")
-        .fetch_optional(&mut conn)
+        .fetch_optional(conn.as_mut())
         .await;
     assert!(row.is_ok());
 
@@ -204,7 +204,7 @@ async fn test_apply_revert_apply_different() -> Result<(), Box<dyn Error>> {
 
     // try to insert data into test3, this should fail
     let res: Result<_, sqlx::Error> = sqlx::query("INSERT INTO test3 VALUES (1)")
-        .execute(&mut conn)
+        .execute(conn.as_mut())
         .await;
     assert!(matches!(
         res,
@@ -217,7 +217,7 @@ async fn test_apply_revert_apply_different() -> Result<(), Box<dyn Error>> {
 
     // try to insert data into test3_alt, this should succeed
     let res: Result<_, sqlx::Error> = sqlx::query("INSERT INTO test3_alt VALUES (1)")
-        .execute(&mut conn)
+        .execute(conn.as_mut())
         .await;
     assert!(res.is_ok());
 
